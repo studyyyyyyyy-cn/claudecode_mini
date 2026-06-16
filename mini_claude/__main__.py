@@ -229,10 +229,9 @@ Examples:
         sys.exit(0)
 
     permission_mode = _resolve_permission_mode(args)
-    model = args.model or os.environ.get("MINI_CLAUDE_MODEL", "claude-opus-4-6")
     api_base = args.api_base
 
-    # Resolve API config
+    # Resolve API config first (so we know backend type before choosing model)
     resolved_api_base = api_base
     resolved_api_key: str | None = None
     resolved_use_openai = bool(api_base)
@@ -253,6 +252,13 @@ Examples:
     if not resolved_api_key and api_base:
         resolved_api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
         resolved_use_openai = True
+
+    # Resolve model — use different defaults for OpenAI vs Anthropic backends
+    if resolved_use_openai:
+        default_model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    else:
+        default_model = "claude-opus-4-6"
+    model = args.model or os.environ.get("MINI_CLAUDE_MODEL") or default_model
 
     if not resolved_api_key:
         print_error(

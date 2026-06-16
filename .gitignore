@@ -16,6 +16,9 @@ env/
 .vscode/
 .idea/
 
+# Claude config (local only)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
