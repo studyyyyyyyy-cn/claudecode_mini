@@ -14,16 +14,17 @@ from pathlib import Path
 
 from .memory import get_memory_dir
 from .frontmatter import parse_frontmatter
+from .tasks import create_task, list_tasks, update_task
 
 # ─── Permission modes ──────────────────────────────────────
 
 PermissionMode = str  # "default" | "plan" | "acceptEdits" | "bypassPermissions" | "dontAsk"
 
-READ_TOOLS = {"read_file", "list_files", "grep_search", "web_fetch"}
+READ_TOOLS = {"read_file", "list_files", "grep_search", "web_fetch", "task_list"}
 EDIT_TOOLS = {"write_file", "edit_file"}
 
 # Concurrency-safe tools can run in parallel (read-only, no side effects)
-CONCURRENCY_SAFE_TOOLS = {"read_file", "list_files", "grep_search", "web_fetch"}
+CONCURRENCY_SAFE_TOOLS = {"read_file", "list_files", "grep_search", "web_fetch", "task_list"}
 
 IS_WIN = sys.platform == "win32"
 
@@ -166,6 +167,41 @@ tool_definitions: list[ToolDef] = [
                 "query": {"type": "string", "description": "Tool name or search keywords"},
             },
             "required": ["query"],
+        },
+    },
+    # ─── Task tracking ───────────────────────────────────────
+    {
+        "name": "task_create",
+        "description": "Create a new task to track progress on complex multi-step work. Returns the task ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string", "description": "A brief, actionable title for the task"},
+                "description": {"type": "string", "description": "What needs to be done and any relevant context"},
+            },
+            "required": ["subject"],
+        },
+    },
+    {
+        "name": "task_list",
+        "description": "List all tasks with their status. Useful before starting work to see what's pending.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "task_update",
+        "description": "Update a task's status or details. Mark tasks as in_progress when starting, completed when done, or deleted if no longer relevant.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The ID of the task to update"},
+                "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "deleted"], "description": "New status for the task"},
+                "subject": {"type": "string", "description": "New subject/title for the task"},
+                "description": {"type": "string", "description": "New description for the task"},
+            },
+            "required": ["task_id"],
         },
     },
 ]
@@ -459,6 +495,56 @@ def _web_fetch(inp: dict) -> str:
     return text or "(empty response)"
 
 
+# ─── Task handlers ──────────────────────────────────────────
+
+
+def _task_create(inp: dict) -> str:
+    subject = inp.get("subject", "").strip()
+    if not subject:
+        return "Error: subject is required"
+    description = inp.get("description", "").strip()
+    task_id = create_task(subject, description)
+    return f"Task created: [{task_id}] {subject}"
+
+
+def _task_list(_inp: dict) -> str:
+    tasks = list_tasks()
+    if not tasks:
+        return "No tasks yet. Use task_create to create one."
+    lines = []
+    status_icons = {"pending": "○", "in_progress": "◐", "completed": "●", "deleted": "✕"}
+    for t in tasks:
+        icon = status_icons.get(t.status, "?")
+        desc = f" — {t.description[:80]}..." if len(t.description) > 80 else (f" — {t.description}" if t.description else "")
+        lines.append(f"  [{t.id}] {icon} {t.subject}{desc}")
+    status_order = {"in_progress": 0, "pending": 1, "completed": 2, "deleted": 3}
+    lines.sort(key=lambda l: next((v for k, v in status_order.items() if k in l.split(" ")[2] if l.split(" ")[1] == "◐"), 9))
+    return f"{len(tasks)} tasks:\n" + "\n".join(lines)
+
+
+def _task_update(inp: dict) -> str:
+    task_id = inp.get("task_id", "").strip()
+    if not task_id:
+        return "Error: task_id is required"
+
+    kwargs = {}
+    if "status" in inp and inp["status"]:
+        kwargs["status"] = inp["status"]
+    if "subject" in inp and inp["subject"]:
+        kwargs["subject"] = inp["subject"]
+    if "description" in inp and inp["description"]:
+        kwargs["description"] = inp["description"]
+
+    if not kwargs:
+        return "Error: at least one of status, subject, or description must be provided"
+
+    ok = update_task(task_id, **kwargs)
+    if not ok:
+        return f"Error: task [{task_id}] not found"
+    changes = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+    return f"Task [{task_id}] updated: {changes}"
+
+
 # ─── Dangerous command patterns ─────────────────────────────
 
 DANGEROUS_PATTERNS = [
@@ -685,6 +771,9 @@ async def execute_tool(
         "grep_search": _grep_search,
         "run_shell": _run_shell,
         "web_fetch": _web_fetch,
+        "task_create": _task_create,
+        "task_list": _task_list,
+        "task_update": _task_update,
     }
     handler = handlers.get(name)
     if not handler:

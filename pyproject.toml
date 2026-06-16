@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-code-from-scratch"
+name = "claude-code-mini"
 version = "1.0.0"
 description = "A minimal coding agent inspired by Claude Code, built from scratch in Python"
 requires-python = ">=3.11"
