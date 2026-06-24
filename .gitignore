@@ -16,8 +16,8 @@ env/
 .vscode/
 .idea/
 
-# Claude config (local only)
-.claude/settings.local.json
+# Claude local config (contains API keys)
+.claude/
 
 # OS
 .DS_Store
